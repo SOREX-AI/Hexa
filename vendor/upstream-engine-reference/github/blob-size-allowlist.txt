@@ -1,0 +1,10 @@
+# Paths are matched exactly, relative to the repository root.
+# Keep this list short and limited to intentional large checked-in assets.
+
+.github/vendor/upstream-js-cli-splash.png
+MODULE.bazel.lock
+engine/app-server-protocol/schema/json/codex_app_server_protocol.schemas.json
+engine/app-server-protocol/schema/json/codex_app_server_protocol.v2.schemas.json
+engine/tui/tests/fixtures/oss-story.jsonl
+engine/tui_app_server/tests/fixtures/oss-story.jsonl
+engine/tui/src/app.rs

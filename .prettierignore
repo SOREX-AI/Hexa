@@ -1,0 +1,7 @@
+/vendor/upstream-js-cli/dist
+/vendor/upstream-js-cli/node_modules
+pnpm-lock.yaml
+
+prompt.md
+*_prompt.md
+*_instructions.md

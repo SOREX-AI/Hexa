@@ -1,0 +1,13 @@
+name: Hexa feature request
+about: Propose a change to Hexa
+body:
+  - type: textarea
+    attributes:
+      label: Problem or goal
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true

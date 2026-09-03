@@ -1,0 +1,147 @@
+name: Build Hexa for all platforms
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            runner: windows-latest
+            platform: windows
+            artifact: hexa-windows-x64
+          - name: macOS
+            runner: macos-latest
+            platform: macos
+            artifact: hexa-macos
+          - name: Linux x64
+            runner: ubuntu-latest
+            platform: linux
+            artifact: hexa-linux-x64
+
+    env:
+      CI: "true"
+      CARGO_INCREMENTAL: "0"
+      CARGO_TERM_COLOR: always
+      ELECTRON_CACHE: ${{ github.workspace }}/.ci-cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.ci-cache/electron-builder
+      CSC_LINK: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'windows' && secrets.WINDOWS_CSC_LINK || startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos' && secrets.MACOS_CSC_LINK || '' }}
+      CSC_KEY_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'windows' && secrets.WINDOWS_CSC_KEY_PASSWORD || startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos' && secrets.MACOS_CSC_KEY_PASSWORD || '' }}
+      APPLE_ID: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos' && secrets.APPLE_ID || '' }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos' && secrets.APPLE_APP_SPECIFIC_PASSWORD || '' }}
+      APPLE_TEAM_ID: ${{ startsWith(github.ref, 'refs/tags/v') && matrix.platform == 'macos' && secrets.APPLE_TEAM_ID || '' }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+
+      - name: Install the configured Rust toolchain
+        shell: bash
+        run: rustup show active-toolchain
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential clang cmake libcap-dev libssl-dev pkg-config libopenjp2-tools
+
+      - name: Cache Cargo downloads and packaging tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shell/.cache/rusty-v8
+            .ci-cache/electron
+            .ci-cache/electron-builder
+          key: hexa-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('engine/Cargo.lock', 'pnpm-lock.yaml', 'shell/package.json') }}
+          restore-keys: |
+            hexa-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Install desktop dependencies
+        shell: bash
+        run: pnpm install --frozen-lockfile --filter hexa...
+
+      - name: Validate source and configuration
+        shell: bash
+        run: |
+          node hexa.mjs typecheck
+          node hexa.mjs engine-check
+
+      - name: Require signing credentials for tagged releases
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os != 'Linux'
+        shell: bash
+        run: |
+          test -n "$CSC_LINK" || { echo "Missing code-signing certificate for $RUNNER_OS"; exit 1; }
+          test -n "$CSC_KEY_PASSWORD" || { echo "Missing code-signing certificate password for $RUNNER_OS"; exit 1; }
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            test -n "$APPLE_ID" || { echo "Missing APPLE_ID"; exit 1; }
+            test -n "$APPLE_APP_SPECIFIC_PASSWORD" || { echo "Missing APPLE_APP_SPECIFIC_PASSWORD"; exit 1; }
+            test -n "$APPLE_TEAM_ID" || { echo "Missing APPLE_TEAM_ID"; exit 1; }
+          fi
+
+      - name: Build engine, desktop client, and installer
+        shell: bash
+        run: node hexa.mjs dist
+
+      - name: Upload packaged application
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist-release/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-release:
+    name: Publish update assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged applications
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Publish installers and updater metadata
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/**/*.exe
+            release-assets/**/*.exe.blockmap
+            release-assets/**/*.dmg
+            release-assets/**/*.zip
+            release-assets/**/*.zip.blockmap
+            release-assets/**/*.AppImage
+            release-assets/**/*.AppImage.blockmap
+            release-assets/**/latest.yml
+            release-assets/**/latest-mac.yml
+            release-assets/**/latest-linux.yml

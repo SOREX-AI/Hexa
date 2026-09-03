@@ -1,0 +1,134 @@
+{
+  "name": "hexa",
+  "productName": "Hexa",
+  "version": "0.0.1",
+  "private": true,
+  "description": "A polished, cross-platform desktop workspace powered by the Hexa Engine app-server runtime.",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "author": "SOREX AI",
+  "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SOREX-AI/Hexa.git"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build-all.mjs",
+    "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
+    "engine:check": "node scripts/check-engine-layout.mjs",
+    "engine:build": "node scripts/build-engine.mjs",
+    "legal:notices": "node scripts/generate-third-party-notices.mjs",
+    "protocol:sync": "node scripts/sync-protocol.mjs",
+    "dist": "node scripts/dist.mjs",
+    "pack": "node scripts/dist.mjs --dir",
+    "installer": "node scripts/dist.mjs",
+    "installer:dir": "node scripts/dist.mjs --dir",
+    "clean": "node scripts/clean.mjs"
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9",
+    "lucide-react": "1.34.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "@vitejs/plugin-react": "6.1.0",
+    "electron": "43.4.1",
+    "electron-builder": "26.15.3",
+    "typescript": "7.0.2",
+    "vite": "8.2.2"
+  },
+  "build": {
+    "appId": "dev.hexa.app",
+    "productName": "Hexa",
+    "copyright": "Copyright © 2026 SOREX AI",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "SOREX-AI",
+        "repo": "Hexa",
+        "releaseType": "release"
+      }
+    ],
+    "asar": true,
+    "files": [
+      "dist/**/*",
+      "assets/icon-1024.png",
+      "resources/branding/**/*",
+      "package.json",
+      "generated/THIRD_PARTY_NOTICES.md"
+    ],
+    "extraResources": [
+      {
+        "from": "../LICENSE-GPL-3.0",
+        "to": "licenses/HEXA-SHELL-LICENSE"
+      },
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../LICENSE-APACHE-2.0",
+        "to": "licenses/UPSTREAM-ENGINE-LICENSE"
+      },
+      {
+        "from": "../NOTICE",
+        "to": "licenses/UPSTREAM-ENGINE-NOTICE"
+      },
+      {
+        "from": "generated/THIRD_PARTY_NOTICES.md",
+        "to": "licenses/THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Hexa-${version}-${arch}.${ext}",
+      "icon": "assets/icon-1024.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "runAfterFinish": true,
+      "license": "assets/privacy-policy.txt"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "assets/icon-1024.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "hardenedRuntime": true,
+      "notarize": true,
+      "icon": "assets/icon-1024.png"
+    }
+  }
+}

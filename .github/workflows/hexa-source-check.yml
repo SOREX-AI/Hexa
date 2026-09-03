@@ -1,0 +1,30 @@
+name: Hexa source check
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check JavaScript patch/update scripts
+        run: |
+          node --check hexa.mjs
+          node --check hexa-launcher.mjs
+          node --check shell/scripts/engine-patches.mjs
+          node --check shell/scripts/update-upstream.mjs
+          node --check shell/scripts/import-engine-version.mjs
+          node --check shell/scripts/build-engine.mjs
+      - name: Validate Hexa engine branding/compatibility layer
+        env:
+          HEXA_SKIP_CARGO_METADATA: '1'
+        run: node shell/scripts/check-engine-layout.mjs

@@ -1,0 +1,127 @@
+# deps
+# Node.js dependencies
+node_modules/
+**/node_modules/
+/.pnpm-store/
+.pnpm-debug.log
+
+# Keep pnpm-lock.yaml
+!pnpm-lock.yaml
+
+# Generated build output (at any workspace depth)
+**/dist/
+**/build/
+**/out/
+**/target/
+**/release/
+**/dist-release/
+**/storybook-static/
+**/.next/
+**/.nuxt/
+**/.svelte-kit/
+**/.output/
+**/coverage/
+**/.nyc_output/
+bazel-*
+user.bazelrc
+
+# Rust/Hexa Engine build output
+**/target/
+
+# Electron shell generated output
+shell/dist/
+shell/out/
+shell/release/
+shell/dist-release/
+shell/.vite/
+shell/.electron-vite/
+shell/.webpack/
+/shell/resources/bin/
+
+# Packaged installers copied to the repository root
+/dist-release/
+
+# ignore README for publishing
+vendor/upstream-js-cli/README.md
+
+# ignore Nix derivation results
+result
+
+# editor
+!.vscode/
+!.vscode/**
+.idea/
+.history/
+.zed/
+*.swp
+*~
+
+# cli tools
+CLAUDE.md
+.claude/
+AGENTS.override.md
+
+# caches
+.cache/
+.turbo/
+.parcel-cache/
+.vite/
+.electron/
+.electron-builder-cache/
+.eslintcache
+.nyc_output/
+.jest/
+*.tsbuildinfo
+*.tmp
+*.temp
+*.pid
+*.pid.lock
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env
+.env*
+!.env.example
+.venv/
+
+# package
+*.tgz
+
+# ci
+.vercel/
+.netlify/
+/.tmp/sdk-ci/
+/upstream-rusty-v8/
+
+# patches
+apply_patch/
+
+# personal files
+personal/
+
+# os
+.DS_Store
+Thumbs.db
+Icon?
+.Spotlight-V100/
+
+# Unwanted package managers
+.yarn/
+yarn.lock
+
+# release
+package.json-e
+session.ts-e
+CHANGELOG.ignore.md
+
+# nix related
+.direnv
+.envrc
+
+# Python bytecode files
+__pycache__/
+*.pyc

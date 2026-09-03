@@ -1,0 +1,13 @@
+Hexa Privacy Policy
+
+Hexa stores its configuration, authentication state, conversation history, skills, plugins, and runtime databases locally in the .hexashell folder in your user home directory.
+
+Hexa does not add its own advertising or analytics SDK. Requests sent to a selected hosted model provider are subject to that provider's terms and privacy practices. Requests sent to a local provider such as Ollama or LM Studio remain subject to the configuration and networking behavior of that local software.
+
+Hexa may execute commands, read files, and modify files when you authorize those operations through the selected permission profile. Full-access mode can access files and networks without individual approval and should only be enabled when you understand the risk.
+
+Plugins, MCP servers, web search, browser tools, and other integrations can communicate with third-party services. Review their permissions and policies before enabling them.
+
+By selecting Agree, you acknowledge this privacy policy and consent to Hexa storing the local application data needed to operate. Select Disagree to cancel installation.
+
+Upstream open-source components retain their respective licenses and notices, which are included with the application.

@@ -1,0 +1,29 @@
+packages:
+  - shell
+
+ignoredBuiltDependencies:
+  - esbuild
+
+minimumReleaseAge: 10080
+minimumReleaseAgeExclude:
+  # Hexa deliberately pins current stable desktop/UI tooling.
+  - electron
+  - vite
+  - lucide-react
+  - react
+  - react-dom
+  - "@vitejs/plugin-react"
+  - typescript
+  - electron-builder
+  - "@types/node"
+  - "@types/react"
+  - "@types/react-dom"
+
+blockExoticSubdeps: true
+strictDepBuilds: true
+trustPolicy: no-downgrade
+trustPolicyIgnoreAfter: 10080
+trustPolicyExclude: []
+allowBuilds:
+  electron: true
+  electron-winstaller: true
