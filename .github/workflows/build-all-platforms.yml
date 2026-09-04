@@ -16,7 +16,7 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 180
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -59,10 +59,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22.12.0"
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - name: Install the configured Rust toolchain
         shell: bash
         run: rustup show active-toolchain
+
+      - name: Cache Rust dependencies and build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "engine -> target"
 
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
@@ -70,18 +77,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y build-essential clang cmake libcap-dev libssl-dev pkg-config libopenjp2-tools
 
-      - name: Cache Cargo downloads and packaging tools
+      - name: Cache packaging tools
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
             shell/.cache/rusty-v8
             .ci-cache/electron
             .ci-cache/electron-builder
-          key: hexa-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('engine/Cargo.lock', 'pnpm-lock.yaml', 'shell/package.json') }}
+          key: hexa-packaging-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('engine/Cargo.lock', 'pnpm-lock.yaml', 'shell/package.json') }}
           restore-keys: |
-            hexa-${{ runner.os }}-${{ runner.arch }}-
+            hexa-packaging-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install desktop dependencies
         shell: bash
