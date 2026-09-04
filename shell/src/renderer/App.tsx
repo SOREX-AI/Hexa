@@ -237,6 +237,10 @@ function ChatApp() {
   const [preferences, setPreferences] = useState<AppPreferences | null>(null);
   useShellTheme(preferences?.themeMode);
   const [booting, setBooting] = useState(true);
+  // Account selection can restart the engine, which temporarily unmounts the
+  // ready-only onboarding overlay. Keep its page in the parent so that restart
+  // does not send a first-time user back to the welcome page.
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [welcomeCycle, setWelcomeCycle] = useState(0);
   const [sandboxSetup, setSandboxSetup] = useState(false);
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -2057,6 +2061,8 @@ function ChatApp() {
           account={account}
           mode={preferences.accountMode}
           cwd={cwd}
+          step={onboardingStep}
+          onStep={setOnboardingStep}
           onChooseFolder={chooseFolder}
           onOpenAI={signInToOpenAI}
           onLocal={() => selectAccountMode('local')}
@@ -3704,16 +3710,17 @@ function AccountSwitcher({ account, mode, onOpenAI, onLocal, onClose }: { accoun
   );
 }
 
-function Onboarding({ account, mode, cwd, onChooseFolder, onOpenAI, onLocal, onFinish }: {
+function Onboarding({ account, mode, cwd, step, onStep, onChooseFolder, onOpenAI, onLocal, onFinish }: {
   account: any;
   mode: 'openai' | 'local';
   cwd: string;
+  step: number;
+  onStep(step: number): void;
   onChooseFolder(): Promise<void>;
   onOpenAI(): Promise<void>;
   onLocal(): Promise<void>;
   onFinish(): Promise<void>;
 }) {
-  const [step, setStep] = useState(0);
   const [leaving, setLeaving] = useState(false);
   const pages = 4;
   async function complete() {
@@ -3731,7 +3738,7 @@ function Onboarding({ account, mode, cwd, onChooseFolder, onOpenAI, onLocal, onF
         {step === 1 && <div className="onboarding-page"><span className="eyebrow">ACCOUNT</span><h2>What account do you want to use?</h2><p>Choose OpenAI for hosted access, or keep the Shell in local-model mode.</p><div className="onboarding-options"><button className={mode === 'openai' ? 'selected' : ''} onClick={() => void onOpenAI()}><Globe2 size={21} /><span><b>{account ? accountLabel(account, mode) : 'OpenAI'}</b><small>{account ? 'Connected through the Shell' : 'Sign in securely in a browser panel'}</small></span>{mode === 'openai' && <Check size={16} />}</button><button className={mode === 'local' ? 'selected' : ''} onClick={() => void onLocal()}><SquareTerminal size={21} /><span><b>Local</b><small>Use a provider running on this computer</small></span>{mode === 'local' && <Check size={16} />}</button></div></div>}
         {step === 2 && <div className="onboarding-page"><span className="eyebrow">WORKSPACE</span><h2>Choose where you’ll build</h2><p>Set a starting workspace now, or choose one per chat later.</p><button className="workspace-setup" onClick={() => void onChooseFolder()}><Folder size={19} /><span><b>{cwd ? shortenPath(cwd, 48) : 'Choose a workspace'}</b><small>Shell will work within the permissions you select</small></span><ChevronRight size={17} /></button><div className="setup-assurance"><ShieldCheck size={16} /> You stay in control of approvals and file access.</div></div>}
         {step === 3 && <div className="onboarding-page ready-page"><div className="ready-mark"><Check size={26} /></div><span className="eyebrow">READY</span><h2>Hexa is ready.</h2><p>Start with an idea, inspect an existing project, or ask the Shell to build something new.</p></div>}
-        <div className="onboarding-actions">{step > 0 ? <button className="onboarding-back" onClick={() => setStep((value) => value - 1)}>Back</button> : <span />}<button className="onboarding-next" onClick={() => step === pages - 1 ? void complete() : setStep((value) => value + 1)}>{step === pages - 1 ? 'Enter Hexa' : 'Next'}<ChevronRight size={16} /></button></div>
+        <div className="onboarding-actions">{step > 0 ? <button className="onboarding-back" onClick={() => onStep(step - 1)}>Back</button> : <span />}<button className="onboarding-next" onClick={() => step === pages - 1 ? void complete() : onStep(step + 1)}>{step === pages - 1 ? 'Enter Hexa' : 'Next'}<ChevronRight size={16} /></button></div>
       </div>
     </div>
   );
