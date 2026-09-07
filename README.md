@@ -23,13 +23,7 @@ The [building guide](./docs/BUILDING.md) is the canonical place for prerequisite
 
 ## Documentation
 
-- [Documentation overview](./docs/README.md)
-- [Architecture](./docs/ARCHITECTURE.md)
-- [Configuration and permissions](./docs/CONFIGURATION.md)
-- [Interface design](./docs/DESIGN.md)
-- [Privacy](./docs/PRIVACY.md)
-- [Updating the engine source](./ENGINE_UPSTREAM.md)
-- [Upstream compatibility](./UPSTREAM_COMPATIBILITY.md)
+See the [documentation index](./docs/README.md) for Hexa guides and retained upstream references.
 
 ## Project lineage
 
