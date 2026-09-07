@@ -20,7 +20,7 @@ const sourceEngineExecutableName = `hexa-engine${executableSuffix}`;
 const executableName = process.platform === 'win32' ? 'HexaEngine.exe' : 'hexa-engine';
 // Bump when a required runtime helper changes. This makes a source checkout
 // refresh its cached runtime instead of continuing to run a stale helper.
-const runtimeRevision = 'sqlite-line-endings-v4';
+const runtimeRevision = 'live-model-catalog-v5';
 const runtimeRevisionFile = '.hexa-runtime-revision';
 const installedAppVersionFile = '.hexa-installed-app-version';
 

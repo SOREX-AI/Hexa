@@ -3519,7 +3519,7 @@ function ModelPopover({ models, selectedModel, effort, effortOptions, customProv
           {customProvider && (
             <div className="custom-provider-card"><Braces size={16} /><span><b>Custom</b><small>{customProviderId} from config.toml</small></span><Check size={14} /></div>
           )}
-          {models.slice(0, 18).map((model) => (
+          {models.map((model) => (
             <button key={model.id} className={model.model === selectedModel ? 'selected' : ''} onClick={() => onModel(model.model)}>
               <span className="model-logo"><Bot size={15} /></span>
               <span><b>{model.displayName}</b><small>{model.description || model.model}</small></span>
