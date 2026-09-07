@@ -1,0 +1,158 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { access, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+
+const shellRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repositoryRoot = path.resolve(shellRoot, '..');
+const shellManifest = await readJson(path.join(shellRoot, 'package.json'));
+
+async function exists(file) {
+  try {
+    await access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function text(file) {
+  return (await readFile(file, 'utf8')).replace(/\r\n/g, '\n').trimEnd();
+}
+
+async function readJson(file) {
+  return JSON.parse(await text(file));
+}
+
+function packagePathSegments(name) {
+  return name.startsWith('@') ? name.split('/') : [name];
+}
+
+async function resolvePackageManifest(name, fromDirectory) {
+  let current = path.resolve(fromDirectory);
+
+  while (true) {
+    const candidate = path.join(current, 'node_modules', ...packagePathSegments(name), 'package.json');
+    if (await exists(candidate)) return candidate;
+
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  throw new Error(`Unable to resolve installed package "${name}" from ${fromDirectory}. Run npm install before generating notices.`);
+}
+
+function declaredLicense(manifest) {
+  if (typeof manifest.license === 'string') return manifest.license;
+  if (manifest.license && typeof manifest.license.type === 'string') return manifest.license.type;
+  if (Array.isArray(manifest.licenses)) {
+    const values = manifest.licenses
+      .map((license) => (typeof license === 'string' ? license : license?.type))
+      .filter(Boolean);
+    if (values.length) return values.join(' OR ');
+  }
+  return 'UNKNOWN';
+}
+
+async function licenseDocuments(packageDirectory) {
+  const entries = await readdir(packageDirectory, { withFileTypes: true });
+  const candidates = entries
+    .filter((entry) => entry.isFile() && /^(?:(?:licen[cs]e|copying|copyright|notice)(?:[._-].*)?|.*[._-](?:licen[cs]e|copying|copyright|notice)(?:[._-].*)?)$/i.test(entry.name))
+    .map((entry) => entry.name)
+    .sort((a, b) => a.localeCompare(b));
+
+  const documents = [];
+  const seen = new Set();
+  for (const name of candidates) {
+    const contents = await text(path.join(packageDirectory, name));
+    if (!contents || seen.has(contents)) continue;
+    seen.add(contents);
+    documents.push({ name, contents });
+  }
+  return documents;
+}
+
+function dependencyNames(manifest) {
+  return [...new Set([
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
+  ])].sort((a, b) => a.localeCompare(b));
+}
+
+const packages = new Map();
+const queue = [];
+
+for (const name of dependencyNames(shellManifest)) {
+  queue.push({ name, fromDirectory: shellRoot, required: true });
+}
+
+// Electron is a development dependency for build tooling, but its runtime is
+// distributed with every Hexa desktop package, so it belongs in release notices.
+if (shellManifest.devDependencies?.electron) {
+  queue.push({ name: 'electron', fromDirectory: shellRoot, required: true });
+}
+
+while (queue.length) {
+  const item = queue.shift();
+  let manifestPath;
+  try {
+    manifestPath = await resolvePackageManifest(item.name, item.fromDirectory);
+  } catch (error) {
+    if (!item.required) continue;
+    throw error;
+  }
+
+  const packageDirectory = path.dirname(manifestPath);
+  const manifest = await readJson(manifestPath);
+  const key = `${manifest.name ?? item.name}@${manifest.version ?? 'unknown'}`;
+  if (packages.has(key)) continue;
+
+  const record = {
+    name: manifest.name ?? item.name,
+    version: manifest.version ?? 'unknown',
+    license: declaredLicense(manifest),
+    directory: packageDirectory,
+    documents: await licenseDocuments(packageDirectory),
+  };
+  packages.set(key, record);
+
+  for (const name of Object.keys(manifest.dependencies ?? {})) {
+    queue.push({ name, fromDirectory: packageDirectory, required: true });
+  }
+  for (const name of Object.keys(manifest.optionalDependencies ?? {})) {
+    queue.push({ name, fromDirectory: packageDirectory, required: false });
+  }
+}
+
+const runtimePackages = [...packages.values()].sort((a, b) => {
+  const byName = a.name.localeCompare(b.name);
+  return byName || a.version.localeCompare(b.version) || a.directory.localeCompare(b.directory);
+});
+
+function packageSection(pkg) {
+  const heading = `## ${pkg.name}@${pkg.version} — ${pkg.license}`;
+  if (!pkg.documents.length) {
+    return `${heading}\n\nDeclared license: ${pkg.license}\n\nNo standalone license/notice text was present in the installed package.`;
+  }
+
+  const docs = pkg.documents.map(({ name, contents }) => `### ${name}\n\n${contents}`).join('\n\n');
+  return `${heading}\n\nDeclared license: ${pkg.license}\n\n${docs}`;
+}
+
+const sections = [
+  [
+    'Hexa distribution notices',
+    'This file is generated by shell/scripts/generate-third-party-notices.mjs. Do not edit it manually.',
+    'It accompanies Hexa release artifacts and is generated from the complete installed runtime dependency tree used by the shell, plus Electron because its runtime is distributed with the desktop application.',
+  ].join('\n'),
+  `## Hexa Electron Shell — GPL-3.0-only\n\nCopyright (C) 2026 SOREX AI\n\nSPDX-License-Identifier: GPL-3.0-only\n\n${await text(path.join(repositoryRoot, 'LICENSE-GPL-3.0'))}`,
+  `## Upstream Codex Engine — Apache-2.0\n\n${await text(path.join(repositoryRoot, 'LICENSE-APACHE-2.0'))}`,
+  `## Upstream Codex NOTICE\n\n${await text(path.join(repositoryRoot, 'NOTICE'))}`,
+  ...runtimePackages.map(packageSection),
+];
+
+const generatedDirectory = path.join(shellRoot, 'generated');
+const destination = path.join(generatedDirectory, 'THIRD_PARTY_NOTICES.md');
+await mkdir(generatedDirectory, { recursive: true });
+await writeFile(destination, `${sections.join('\n\n---\n\n')}\n`, 'utf8');
+console.log(`Generated ${path.relative(shellRoot, destination)} (${runtimePackages.length} installed runtime package notices).`);

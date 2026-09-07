@@ -1,0 +1,17 @@
+name: Bug report
+about: Report a reproducible problem
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Reproduction steps
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Hexa / engine details
+      description: Include Hexa version, OS, provider/model, and relevant logs with secrets removed.

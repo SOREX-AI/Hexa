@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="850" viewBox="0 0 1600 850">
+  <defs>
+    <style>
+      .bg{fill:#141615}.panel{fill:#1b1e1c;stroke:#353936;stroke-width:2}.soft{fill:#202321;stroke:#303431;stroke-width:1.4}.t{fill:#d7dad8;font:600 23px system-ui,-apple-system,"Segoe UI",sans-serif}.s{fill:#8d938e;font:400 15px system-ui,-apple-system,"Segoe UI",sans-serif}.mono{fill:#a4aaa5;font:500 14px ui-monospace,SFMono-Regular,Consolas,monospace}.line{fill:none;stroke:#707871;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}.call{fill:#afb5b0;font:600 14px system-ui}.n{fill:#121413;stroke:#828a84;stroke-width:2}.num{fill:#e0e3e1;font:700 14px system-ui;text-anchor:middle;dominant-baseline:middle}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#707871"/></marker>
+  </defs>
+  <rect class="bg" width="1600" height="850" rx="28"/>
+  <text class="t" x="60" y="64">Hexa Engine + Shell — repository architecture</text>
+  <text class="s" x="60" y="94">The shell is another open client surface inside the same source tree. Hexa Engine core remains the execution authority.</text>
+
+  <rect class="panel" x="70" y="155" width="405" height="515" rx="24"/>
+  <text class="t" x="108" y="205">shell/</text><text class="s" x="108" y="235">Electron + React + TypeScript</text>
+  <rect class="soft" x="108" y="275" width="330" height="78" rx="14"/><text class="mono" x="132" y="307">renderer/</text><text class="s" x="132" y="332">history · transcript · composer · context ring</text>
+  <rect class="soft" x="108" y="374" width="330" height="94" rx="14"/><text class="mono" x="132" y="405">main/ + preload/</text><text class="s" x="132" y="430">isolated IPC · runtime manager</text><text class="s" x="132" y="452">native OS window chrome</text>
+  <rect class="soft" x="108" y="489" width="330" height="75" rx="14"/><text class="mono" x="132" y="520">settings window</text><text class="s" x="132" y="545">privacy · permissions · runtime · RPC</text>
+  <rect class="soft" x="108" y="585" width="330" height="54" rx="14"/><text class="mono" x="132" y="618">scripts/  docs/  assets/</text>
+
+  <rect class="panel" x="595" y="210" width="350" height="400" rx="24"/>
+  <text class="t" x="632" y="260">App-server bridge</text><text class="s" x="632" y="290">source-built Hexa Engine process · isolated Shell SQLite runtime</text>
+  <rect class="soft" x="632" y="330" width="276" height="86" rx="14"/><text class="mono" x="655" y="362">HexaEngine app-server --stdio</text><text class="s" x="655" y="388">JSONL request/response + notifications</text>
+  <rect class="soft" x="632" y="438" width="276" height="126" rx="14"/><text class="mono" x="655" y="470">rich client protocol</text><text class="s" x="655" y="496">threads · turns · approvals</text><text class="s" x="655" y="520">tools · plans · diffs · token usage</text><text class="s" x="655" y="544">models · config · compaction</text><text class="mono" x="655" y="590">engine DB key → Hexa user data</text>
+
+  <rect class="panel" x="1065" y="155" width="455" height="515" rx="24"/>
+  <text class="t" x="1102" y="205">engine/ + Hexa Engine core</text><text class="s" x="1102" y="235">the existing public engine implementation at repository root</text>
+  <rect class="soft" x="1102" y="275" width="178" height="95" rx="14"/><text class="mono" x="1125" y="307">Core</text><text class="s" x="1125" y="333">threads · turns</text><text class="s" x="1125" y="354">compaction</text>
+  <rect class="soft" x="1300" y="275" width="178" height="95" rx="14"/><text class="mono" x="1323" y="307">Tools</text><text class="s" x="1323" y="333">shell · files</text><text class="s" x="1323" y="354">MCP · agents</text>
+  <rect class="soft" x="1102" y="391" width="178" height="95" rx="14"/><text class="mono" x="1125" y="423">Config</text><text class="s" x="1125" y="449">config.toml</text><text class="s" x="1125" y="470">models · telemetry</text>
+  <rect class="soft" x="1300" y="391" width="178" height="95" rx="14"/><text class="mono" x="1323" y="423">Policy</text><text class="s" x="1323" y="449">sandbox</text><text class="s" x="1323" y="470">permissions</text>
+  <rect class="soft" x="1102" y="507" width="376" height="120" rx="14"/><text class="mono" x="1125" y="539">build upstream targets → stage Hexa runtime</text><text class="s" x="1125" y="566">source: ./engine/Cargo.toml</text><text class="s" x="1125" y="590">CLI + Code Mode/sandbox helpers staged together</text><text class="s" x="1125" y="614">no precompiled engine binary required in source checkout</text>
+
+  <path class="line" marker-end="url(#arrow)" d="M475 355 C520 355 548 355 595 355"/><text class="call" x="492" y="337">typed IPC</text>
+  <path class="line" marker-end="url(#arrow)" d="M945 355 C990 355 1018 355 1065 355"/><text class="call" x="965" y="337">JSONL RPC</text>
+  <path class="line" marker-end="url(#arrow)" d="M1065 565 C1010 665 908 730 776 735 C625 740 515 692 430 622"/><text class="call" x="655" y="780">thread state, config, approvals and token usage flow back into the shell</text>
+
+  <circle class="n" cx="46" cy="330" r="17"/><text class="num" x="46" y="330">1</text><path class="line" d="M63 330H108"/><text class="call" x="75" y="315">UI owns presentation, not agent state</text>
+  <circle class="n" cx="772" cy="160" r="17"/><text class="num" x="772" y="160">2</text><path class="line" d="M772 177V210"/><text class="call" x="795" y="166">Electron isolates renderer from Node/runtime access</text>
+  <circle class="n" cx="1550" cy="330" r="17"/><text class="num" x="1550" y="330">3</text><path class="line" d="M1533 330H1478"/><text class="call" x="1245" y="315">Hexa Engine remains execution authority</text>
+  <circle class="n" cx="1290" cy="715" r="17"/><text class="num" x="1290" y="715">4</text><path class="line" d="M1290 698V627"/><text class="call" x="1320" y="721">Shell builds directly from root engine source</text>
+</svg>

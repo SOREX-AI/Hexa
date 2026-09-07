@@ -1,0 +1,74 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Hexa: Run Development",
+      "type": "process",
+      "command": "node",
+      "args": ["${workspaceFolder}/hexa.mjs", "dev"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Hexa: Build Production",
+      "type": "process",
+      "command": "node",
+      "args": ["${workspaceFolder}/hexa.mjs", "build"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$tsc"],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Hexa: Run Production",
+      "type": "shell",
+      "command": "pnpm exec electron .",
+      "options": {
+        "cwd": "${workspaceFolder}/shell",
+        "env": {
+          "NODE_ENV": "production"
+        }
+      },
+      "dependsOn": ["Hexa: Build Production"],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Hexa: Build Installer",
+      "type": "process",
+      "command": "node",
+      "args": ["${workspaceFolder}/hexa.mjs", "dist"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

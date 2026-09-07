@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug Hexa Engine (upstream Cargo target)",
+      "cargo": {
+        "cwd": "${workspaceFolder}/engine",
+        "args": ["build", "--bin=codex"]
+      },
+      "args": []
+    },
+    {
+      "type": "lldb",
+      "request": "attach",
+      "name": "Attach to running Hexa Engine",
+      "pid": "${command:pickProcess}",
+      "sourceLanguages": ["rust"]
+    }
+  ]
+}
