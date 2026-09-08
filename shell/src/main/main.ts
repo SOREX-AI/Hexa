@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nati
 import type { IpcMainInvokeEvent, MenuItemConstructorOptions, OpenDialogOptions } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BinaryManager } from './engine/BinaryManager.js';
@@ -21,6 +21,48 @@ let quitting = false;
 let activeAppMenuId = 0;
 
 type AppMenuName = 'file' | 'edit' | 'view' | 'help';
+
+async function copyImportTree(source: string, destination: string): Promise<void> {
+  await mkdir(destination, { recursive: true });
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) throw new Error(`Imports cannot contain symbolic links: ${entry.name}`);
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) await copyImportTree(from, to);
+    else if (entry.isFile()) await copyFile(from, to);
+  }
+}
+
+function skillSummaryFromContent(name: string, filePath: string, content: string) {
+  const declaredName = content.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, '') || name;
+  const description = content.match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, '') || '';
+  return { name: declaredName, description, path: filePath, content, source: 'personal' as const };
+}
+
+async function githubContents(relativePath: string): Promise<any[]> {
+  const url = `https://api.github.com/repos/openai/skills/contents/${relativePath.split('/').map(encodeURIComponent).join('/')}?ref=main`;
+  const response = await fetch(url, {
+    headers: { Accept: 'application/vnd.github+json', 'User-Agent': `Hexa/${app.getVersion()}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) throw new Error(`OpenAI skills catalog request failed (${response.status}).`);
+  const value = await response.json();
+  if (!Array.isArray(value)) throw new Error('OpenAI skills catalog returned an unexpected response.');
+  return value;
+}
+
+async function installGithubSkillTree(relativePath: string, destination: string): Promise<void> {
+  await mkdir(destination, { recursive: true });
+  for (const entry of await githubContents(relativePath)) {
+    if (entry.type === 'dir') {
+      await installGithubSkillTree(`${relativePath}/${entry.name}`, path.join(destination, entry.name));
+    } else if (entry.type === 'file' && typeof entry.download_url === 'string') {
+      const response = await fetch(entry.download_url, { signal: AbortSignal.timeout(20_000) });
+      if (!response.ok) throw new Error(`Could not download ${entry.name} (${response.status}).`);
+      await writeFile(path.join(destination, entry.name), Buffer.from(await response.arrayBuffer()));
+    }
+  }
+}
 
 function sendMenuAction(action: string) {
   mainWindow?.webContents.send('shell:app-menu-action', action);
@@ -773,6 +815,89 @@ function registerIpc(): void {
     await writeFile(filePath, input.content, 'utf8');
     const description = input.content.match(/^description:\s*(.+)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, '') || '';
     return { name, description, path: filePath, content: input.content, source: filePath.startsWith(workspaceRoot) ? 'workspace' : 'personal' };
+  });
+  ipcMain.handle('shell:list-curated-skills', async () => {
+    const personalRoot = path.join(resolveHexaHome(), 'skills');
+    const entries = await githubContents('skills/.curated');
+    return Promise.all(entries.filter((entry) => entry.type === 'dir').map(async (entry) => ({
+      name: String(entry.name),
+      installed: Boolean(await stat(path.join(personalRoot, String(entry.name))).catch(() => null)),
+    }))).then((skills) => skills.sort((a, b) => a.name.localeCompare(b.name)));
+  });
+  ipcMain.handle('shell:install-curated-skill', async (_event, requestedName: string) => {
+    const name = String(requestedName || '').trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(name)) throw new Error('Invalid curated skill name.');
+    const personalRoot = path.resolve(resolveHexaHome(), 'skills');
+    const destination = path.join(personalRoot, name);
+    if (await stat(destination).catch(() => null)) throw new Error(`${name} is already installed.`);
+    try {
+      await installGithubSkillTree(`skills/.curated/${name}`, destination);
+      const filePath = path.join(destination, 'SKILL.md');
+      const content = await readFile(filePath, 'utf8');
+      if (!/^---\s*\r?\n[\s\S]*?^name:\s*.+$/m.test(content) || !/^description:\s*.+$/m.test(content)) {
+        throw new Error('The downloaded skill does not contain valid SKILL.md frontmatter.');
+      }
+      return skillSummaryFromContent(name, filePath, content);
+    } catch (error) {
+      await rm(destination, { recursive: true, force: true });
+      throw error;
+    }
+  });
+  ipcMain.handle('shell:import-skill', async () => {
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: 'Import a Hexa skill folder' })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Import a Hexa skill folder' });
+    const source = result.canceled ? null : result.filePaths[0] ?? null;
+    if (!source) return null;
+    const content = await readFile(path.join(source, 'SKILL.md'), 'utf8').catch(() => '');
+    if (!content) throw new Error('Choose a skill folder containing SKILL.md.');
+    const declaredName = content.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^['"]|['"]$/g, '').toLowerCase() || path.basename(source).toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(declaredName) || !/^description:\s*.+$/m.test(content)) {
+      throw new Error('Imported SKILL.md requires valid name and description frontmatter.');
+    }
+    const destination = path.join(path.resolve(resolveHexaHome(), 'skills'), declaredName);
+    if (await stat(destination).catch(() => null)) throw new Error(`A skill named ${declaredName} is already installed.`);
+    try {
+      await copyImportTree(source, destination);
+      const filePath = path.join(destination, 'SKILL.md');
+      return skillSummaryFromContent(declaredName, filePath, await readFile(filePath, 'utf8'));
+    } catch (error) {
+      await rm(destination, { recursive: true, force: true });
+      throw error;
+    }
+  });
+  ipcMain.handle('shell:import-plugin', async () => {
+    const result = mainWindow
+      ? await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'], title: 'Import a Hexa plugin or marketplace folder' })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'], title: 'Import a Hexa plugin or marketplace folder' });
+    const source = result.canceled ? null : result.filePaths[0] ?? null;
+    if (!source) return null;
+    if (await stat(path.join(source, '.agents', 'plugins', 'marketplace.json')).catch(() => null)) return { source };
+
+    const pluginManifestPath = path.join(source, '.codex-plugin', 'plugin.json');
+    const manifestText = await readFile(pluginManifestPath, 'utf8').catch(() => '');
+    if (!manifestText) throw new Error('Choose a plugin folder containing .codex-plugin/plugin.json, or a marketplace folder.');
+    let manifest: any;
+    try { manifest = JSON.parse(manifestText); } catch { throw new Error('The imported plugin.json is not valid JSON.'); }
+    const pluginName = String(manifest.name || path.basename(source)).trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9._-]{0,80}$/.test(pluginName)) throw new Error('The imported plugin has an invalid name.');
+
+    const marketplaceName = `hexa-import-${pluginName}-${Date.now()}`;
+    const marketplaceRoot = path.join(resolveHexaHome(), 'imported-marketplaces', marketplaceName);
+    const pluginDestination = path.join(marketplaceRoot, 'plugins', pluginName);
+    try {
+      await copyImportTree(source, pluginDestination);
+      const marketplaceManifest = {
+        name: marketplaceName,
+        plugins: [{ name: pluginName, source: { source: 'local', path: `./plugins/${pluginName}` } }],
+      };
+      await mkdir(path.join(marketplaceRoot, '.agents', 'plugins'), { recursive: true });
+      await writeFile(path.join(marketplaceRoot, '.agents', 'plugins', 'marketplace.json'), `${JSON.stringify(marketplaceManifest, null, 2)}\n`, 'utf8');
+      return { source: marketplaceRoot, pluginName };
+    } catch (error) {
+      await rm(marketplaceRoot, { recursive: true, force: true });
+      throw error;
+    }
   });
   ipcMain.handle('shell:plugin-icon', async (_event, source: string) => {
     if (/^https:\/\//i.test(source)) return source;

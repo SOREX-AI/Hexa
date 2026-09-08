@@ -114,6 +114,10 @@ export interface HexaBridge {
   writeConfigToml(content: string): Promise<{ path: string }>;
   listSkills(): Promise<HexaSkillSummary[]>;
   saveSkill(input: { name: string; content: string; path?: string }): Promise<HexaSkillSummary>;
+  listCuratedSkills(): Promise<Array<{ name: string; installed: boolean }>>;
+  installCuratedSkill(name: string): Promise<HexaSkillSummary>;
+  importSkill(): Promise<HexaSkillSummary | null>;
+  importPlugin(): Promise<{ source: string; pluginName?: string } | null>;
   showAppMenu(name: 'file' | 'edit' | 'view' | 'help', position: { x: number; y: number }): Promise<void>;
   onAppMenuState(listener: (state: { name: 'file' | 'edit' | 'view' | 'help'; open: boolean }) => void): () => void;
   onAppMenuAction(listener: (action: string) => void): () => void;

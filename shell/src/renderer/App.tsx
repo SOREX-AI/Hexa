@@ -16,6 +16,7 @@ import {
   Clock3,
   Code2,
   Copy,
+  Download,
   FileCode2,
   FileText,
   Folder,
@@ -45,6 +46,7 @@ import {
   Sparkles,
   SquareTerminal,
   Trash2,
+  Upload,
   ThumbsDown,
   ThumbsUp,
   User,
@@ -233,6 +235,7 @@ function ChatApp() {
   const [pausedThread, setPausedThread] = useState<ThreadView | null>(null);
   const [imagePreview, setImagePreview] = useState<{ src: string; name: string } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsInitialPage, setSettingsInitialPage] = useState<SettingsPage>('general');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [preferences, setPreferences] = useState<AppPreferences | null>(null);
   useShellTheme(preferences?.themeMode);
@@ -1135,6 +1138,23 @@ function ChatApp() {
   }, [activeThread]);
 
   useEffect(() => {
+    const feed = feedRef.current;
+    if (!feed) return;
+    const updateActiveTurnHeight = () => {
+      // The feed reserves 190px for the floating composer. Give a live turn
+      // the remaining viewport so scrolling to the bottom places its new user
+      // message near the top instead of leaving the previous conversation in
+      // view. Once the turn settles the spacer disappears automatically.
+      const height = Math.max(260, feed.clientHeight - 248);
+      feed.style.setProperty('--active-turn-min-height', `${height}px`);
+    };
+    updateActiveTurnHeight();
+    const observer = new ResizeObserver(updateActiveTurnHeight);
+    observer.observe(feed);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const threadId = activeThread?.id;
     if (!threadId || threadId.startsWith('local-thread-') || !isNativeTurnRunning || status.phase !== 'ready') return;
     let disposed = false;
@@ -1458,8 +1478,11 @@ function ChatApp() {
       ...(preferences?.threadModelSelections ?? {}),
       ...(threadId ? { [threadId]: { model, reasoningEffort: effort, provider: desiredModelProvider } } : {}),
     };
+    // Reasoning effort is a user preference for both hosted and local models.
+    // Previously local mode only wrote the per-thread entry, so a new chat or
+    // settings reload silently reverted the selector to the old default.
     const nextPreferences = customProvider
-      ? { threadModelSelections }
+      ? { savedReasoningEffort: effort, threadModelSelections }
       : { savedModel: model, savedReasoningEffort: effort, threadModelSelections };
     void window.hexa.setPreferences(nextPreferences).then(setPreferences);
   }
@@ -1870,7 +1893,7 @@ function ChatApp() {
     },
   }));
 
-  if (settingsOpen) return <SettingsApp embedded onClose={() => setSettingsOpen(false)} />;
+  if (settingsOpen) return <SettingsApp embedded initialPage={settingsInitialPage} onClose={() => setSettingsOpen(false)} />;
 
   return (
     <div className={`shell ${sidebarOpen ? '' : 'sidebar-collapsed'} ${booting ? 'booting' : status.phase === 'ready' ? 'boot-complete' : 'awaiting-runtime'} ${status.phase !== 'ready' ? 'runtime-active' : ''}`}>
@@ -2137,6 +2160,7 @@ function ChatApp() {
           onRefresh={() => refreshPlugins(true)}
           onInstall={installPlugin}
           onUninstall={uninstallPlugin}
+          onOpenSkillsSettings={() => { setPluginManagerOpen(false); setSettingsInitialPage('skills'); setSettingsOpen(true); }}
         />
       )}
       {renameTarget && (
@@ -2403,20 +2427,23 @@ function RenameChatModal({ currentName, onCancel, onSave }: { currentName: strin
   );
 }
 
-function PluginManager({ plugins, onClose, onRefresh, onInstall, onUninstall }: {
+function PluginManager({ plugins, onClose, onRefresh, onInstall, onUninstall, onOpenSkillsSettings }: {
   plugins: PluginSummary[];
   onClose: () => void;
   onRefresh: () => Promise<void>;
   onInstall: (plugin: PluginSummary) => Promise<void>;
   onUninstall: (plugin: PluginSummary) => Promise<void>;
+  onOpenSkillsSettings: () => void;
 }) {
-  const [tab, setTab] = useState<'discover' | 'installed'>('discover');
+  const [tab, setTab] = useState<'discover' | 'installed' | 'skills'>('discover');
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [layout, setLayout] = useState<'list' | 'grid'>('list');
   const [detail, setDetail] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [curatedSkills, setCuratedSkills] = useState<Array<{ name: string; installed: boolean }>>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
   const visible = plugins.filter((plugin) => (tab === 'installed' ? plugin.installed : true) && `${plugin.name} ${plugin.interface?.displayName || ''} ${plugin.interface?.shortDescription || ''}`.toLowerCase().includes(query.toLowerCase()));
   const changePlugin = async (plugin: PluginSummary) => {
     setBusyId(plugin.id);
@@ -2438,17 +2465,55 @@ function PluginManager({ plugins, onClose, onRefresh, onInstall, onUninstall }: 
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
     finally { setDetailLoading(false); }
   };
+  const loadCuratedSkills = async () => {
+    setSkillsLoading(true);
+    setError('');
+    try { setCuratedSkills(await window.hexa.listCuratedSkills()); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { setSkillsLoading(false); }
+  };
+  useEffect(() => { if (tab === 'skills' && !curatedSkills.length) void loadCuratedSkills(); }, [tab]);
+  const installCuratedSkill = async (name: string) => {
+    setBusyId(`skill:${name}`);
+    setError('');
+    try {
+      await window.hexa.installCuratedSkill(name);
+      setCuratedSkills((current) => current.map((skill) => skill.name === name ? { ...skill, installed: true } : skill));
+    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { setBusyId(null); }
+  };
+  const importPlugin = async () => {
+    setBusyId('plugin:import');
+    setError('');
+    try {
+      const imported = await window.hexa.importPlugin();
+      if (!imported) return;
+      const added = await window.hexa.request<any>('marketplace/add', { source: imported.source, refName: null, sparsePaths: [] });
+      if (imported.pluginName) {
+        const separator = window.hexa.platform === 'win32' ? '\\' : '/';
+        await window.hexa.request('plugin/install', {
+          marketplacePath: `${added.installedRoot}${separator}.agents${separator}plugins${separator}marketplace.json`,
+          remoteMarketplaceName: null,
+          installAttemptId: crypto.randomUUID(),
+          pluginName: imported.pluginName,
+        });
+      }
+      await onRefresh();
+      setTab(imported.pluginName ? 'installed' : 'discover');
+    } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)); }
+    finally { setBusyId(null); }
+  };
   return (
     <div className="modal-backdrop chrome-no-drag" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="plugin-manager" role="dialog" aria-modal="true" aria-labelledby="plugin-manager-title">
         {detail ? <PluginDetailPage detail={detail} onBack={() => setDetail(null)} onChange={() => { void changePlugin({ ...detail.summary, marketplaceName: detail.marketplaceName, marketplacePath: detail.marketplacePath }).then(() => setDetail(null)); }} busy={busyId === detail.summary.id} /> : <>
-          <header><div className="plugin-manager-mark"><PlugZap size={21} /></div><div><h2 id="plugin-manager-title">Plugins</h2><p>Extend Hexa with tools from OpenAI and your configured marketplaces.</p></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header>
-          <div className="plugin-manager-toolbar"><div className="plugin-layout-toggle"><button className={layout === 'list' ? 'selected' : ''} onClick={() => setLayout('list')} title="List view"><ListViewIcon /></button><button className={layout === 'grid' ? 'selected' : ''} onClick={() => setLayout('grid')} title="Grid view"><GridViewIcon /></button></div><div className="plugin-tabs"><button className={tab === 'discover' ? 'selected' : ''} onClick={() => setTab('discover')}>Discover</button><button className={tab === 'installed' ? 'selected' : ''} onClick={() => setTab('installed')}>Installed <span>{plugins.filter((plugin) => plugin.installed).length}</span></button></div><button className="icon-button" onClick={() => void onRefresh()} title="Refresh plugins"><RefreshCw size={15} /></button></div>
-          <label className="plugin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search plugins" /></label>
+          <header><div className="plugin-manager-mark"><PlugZap size={21} /></div><div><h2 id="plugin-manager-title">Plugins & skills</h2><p>Extend Hexa with OpenAI skills, plugins, and configured marketplaces.</p></div><button className="icon-button" onClick={onClose}><X size={18} /></button></header>
+          <div className="plugin-manager-toolbar"><div className="plugin-layout-toggle">{tab !== 'skills' && <><button className={layout === 'list' ? 'selected' : ''} onClick={() => setLayout('list')} title="List view"><ListViewIcon /></button><button className={layout === 'grid' ? 'selected' : ''} onClick={() => setLayout('grid')} title="Grid view"><GridViewIcon /></button></>}</div><div className="plugin-tabs"><button className={tab === 'discover' ? 'selected' : ''} onClick={() => setTab('discover')}>Discover</button><button className={tab === 'installed' ? 'selected' : ''} onClick={() => setTab('installed')}>Installed <span>{plugins.filter((plugin) => plugin.installed).length}</span></button><button className={tab === 'skills' ? 'selected' : ''} onClick={() => setTab('skills')}>Skills</button></div><div className="plugin-toolbar-actions"><button className="plugin-import-button" disabled={busyId === 'plugin:import'} onClick={() => void importPlugin()}><Upload size={14} /> {busyId === 'plugin:import' ? 'Importing…' : 'Import plugin'}</button><button className="icon-button" onClick={() => void (tab === 'skills' ? loadCuratedSkills() : onRefresh())} title={`Refresh ${tab === 'skills' ? 'skills' : 'plugins'}`}><RefreshCw size={15} /></button></div></div>
+          <label className="plugin-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${tab === 'skills' ? 'skills' : 'plugins'}`} /></label>
           {error && <div className="plugin-error">{error}</div>}
-          <div className={`plugin-grid ${layout}`}>{visible.map((plugin) => <article className="plugin-card" key={plugin.id} onClick={() => void openDetail(plugin)}><div className="plugin-card-icon"><PluginArtwork plugin={plugin} /></div><div className="plugin-card-copy"><b>{plugin.interface?.displayName || plugin.name}</b><small>{plugin.interface?.shortDescription || `From ${plugin.marketplaceName}`}</small><em>{plugin.marketplaceName}</em></div><button disabled={busyId === plugin.id || (!plugin.installed && (plugin.availability === 'DISABLED_BY_ADMIN' || plugin.installPolicy === 'NOT_AVAILABLE'))} className={plugin.installed ? 'installed' : ''} onClick={(event) => { event.stopPropagation(); void changePlugin(plugin); }}>{busyId === plugin.id ? 'Working…' : plugin.installed ? 'Remove' : 'Install'}</button></article>)}</div>
+          {tab === 'skills' ? <div className="curated-skills-view"><div className="skill-settings-callout"><Sparkles size={18} /><span><b>Create or import your own skill</b><small>Personal skill authoring and local skill imports live in Settings.</small></span><button onClick={onOpenSkillsSettings}>Open Skill Settings</button></div><div className="curated-skills-list">{curatedSkills.filter((skill) => skill.name.toLowerCase().includes(query.toLowerCase())).map((skill) => <article className="curated-skill-card" key={skill.name}><span className="skill-mark"><Sparkles size={16} /></span><span><b>{skill.name.replaceAll('-', ' ')}</b><small>OpenAI curated skill</small></span><button className={skill.installed ? 'installed' : ''} disabled={skill.installed || busyId === `skill:${skill.name}`} onClick={() => void installCuratedSkill(skill.name)}>{skill.installed ? 'Installed' : busyId === `skill:${skill.name}` ? 'Installing…' : <><Download size={13} /> Install</>}</button></article>)}</div>{skillsLoading && <div className="plugin-detail-loading">Loading OpenAI skills…</div>}</div> : <div className={`plugin-grid ${layout}`}>{visible.map((plugin) => <article className="plugin-card" key={plugin.id} onClick={() => void openDetail(plugin)}><div className="plugin-card-icon"><PluginArtwork plugin={plugin} /></div><div className="plugin-card-copy"><b>{plugin.interface?.displayName || plugin.name}</b><small>{plugin.interface?.shortDescription || `From ${plugin.marketplaceName}`}</small><em>{plugin.marketplaceName}</em></div><button disabled={busyId === plugin.id || (!plugin.installed && (plugin.availability === 'DISABLED_BY_ADMIN' || plugin.installPolicy === 'NOT_AVAILABLE'))} className={plugin.installed ? 'installed' : ''} onClick={(event) => { event.stopPropagation(); void changePlugin(plugin); }}>{busyId === plugin.id ? 'Working…' : plugin.installed ? 'Remove' : 'Install'}</button></article>)}</div>}
           {detailLoading && <div className="plugin-detail-loading">Loading plugin…</div>}
-          {!visible.length && <div className="plugin-empty"><Puzzle size={26} /><b>{tab === 'installed' ? 'No installed plugins' : 'No plugins found'}</b><span>{query ? 'Try a different search.' : 'Refresh to load the latest catalog.'}</span></div>}
+          {tab !== 'skills' && !visible.length && <div className="plugin-empty"><Puzzle size={26} /><b>{tab === 'installed' ? 'No installed plugins' : 'No plugins found'}</b><span>{query ? 'Try a different search.' : 'Refresh to load the latest catalog.'}</span></div>}
         </>}
       </section>
     </div>
@@ -2717,7 +2782,7 @@ function TurnView({ turn, cwd, preferences, liveTool, activityPaused, onPreviewI
   }
 
   return (
-    <article className="turn">
+    <article className={`turn ${turnSettled ? '' : 'turn-active'}`}>
       <div className="assistant-turn">
         {nodes}
         {turnSettled && turn.error?.message ? <div className="turn-error"><AlertTriangle size={15} /><span>{turn.error.message}</span></div> : null}
@@ -2794,7 +2859,7 @@ function UserMessage({ item, onPreviewImage, allowEdit = false }: { item: any; o
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(text);
   const [expanded, setExpanded] = useState(false);
-  const isLong = text.length > 420 || text.split('\n').length > 7;
+  const isLong = text.length > 2_400 || text.split('\n').length > 30;
   useEffect(() => { if (!editing) setDraft(text); }, [text, editing]);
   useEffect(() => { setExpanded(false); }, [text]);
   const preventAttachmentPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -3825,14 +3890,14 @@ function ContextRing({ percentage, label }: { percentage: number; label: string 
 
 type SettingsPage = 'general' | 'agent' | 'tools' | 'skills' | 'configure' | 'privacy' | 'permissions' | 'developer';
 
-function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClose: () => void }) {
+function SettingsApp({ embedded = false, initialPage = 'general', onClose }: { embedded?: boolean; initialPage?: SettingsPage; onClose: () => void }) {
   const [status, setStatus] = useState<HexaEngineStatus>({ phase: 'idle', message: 'Loading…' });
   const [config, setConfig] = useState<Record<string, any>>({});
   const [requirements, setRequirements] = useState<any>(null);
   const [preferences, setPreferences] = useState<AppPreferences | null>(null);
-  const [active, setActive] = useState<SettingsPage>('general');
+  const [active, setActive] = useState<SettingsPage>(initialPage);
   const [settingsSidebarOpen, setSettingsSidebarOpen] = useState(true);
-  const [settingsHistory, setSettingsHistory] = useState<SettingsPage[]>(['general']);
+  const [settingsHistory, setSettingsHistory] = useState<SettingsPage[]>([initialPage]);
   const [settingsHistoryIndex, setSettingsHistoryIndex] = useState(0);
   const [skillsTab, setSkillsTab] = useState<'active' | 'create'>('active');
   const [skills, setSkills] = useState<HexaSkillSummary[]>([]);
@@ -3859,9 +3924,11 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
       window.hexa.getPreferences(),
     ]);
     setStatus(currentStatus);
-    setPreferences(pref);
 
-    if (currentStatus.phase !== 'ready') return;
+    if (currentStatus.phase !== 'ready') {
+      setPreferences(pref);
+      return;
+    }
 
     const [read, req, installedSkills] = await Promise.all([
       window.hexa.request<any>('config/read', { includeLayers: true }),
@@ -3870,6 +3937,14 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
     ]);
     const effectiveConfig = read?.config ?? read ?? {};
     setConfig(effectiveConfig);
+    const configuredLocalProvider = [effectiveConfig.model_provider, effectiveConfig.oss_provider]
+      .find((provider) => provider === 'ollama' || provider === 'lmstudio') as 'ollama' | 'lmstudio' | undefined;
+    if (pref.accountMode === 'local' && configuredLocalProvider && pref.localModelProvider !== configuredLocalProvider) {
+      setPreferences(await window.hexa.setPreferences({
+        localModelProvider: configuredLocalProvider,
+        localModel: typeof effectiveConfig.model === 'string' ? effectiveConfig.model : pref.localModel,
+      }));
+    } else setPreferences(pref);
     setCompactLimit(effectiveConfig.model_auto_compact_token_limit == null ? '' : String(effectiveConfig.model_auto_compact_token_limit));
     setCompactScope(effectiveConfig.model_auto_compact_token_limit_scope === 'body_after_prefix' ? 'body_after_prefix' : 'total');
     setRequirements(req);
@@ -3899,7 +3974,7 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
 
   useEffect(() => {
     if (preferences?.accountMode === 'local' && preferences.localModelMode) {
-      void detectLocalModels(preferences.localModelProvider);
+      void autoDetectLocalModels();
     }
   }, [preferences?.accountMode, preferences?.localModelMode, preferences?.localModelProvider]);
 
@@ -3940,6 +4015,28 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
     const result = await detectLocalModels(provider);
     const model = result.models[0];
     if (model) await setLocalModel(provider, model, result.contextWindows[model]);
+  }
+
+  async function autoDetectLocalModels() {
+    const preferred = preferences?.localModelProvider ?? 'ollama';
+    const preferredResult = await detectLocalModels(preferred);
+    if (preferredResult.models.length) {
+      if (!preferredResult.models.includes(preferences?.localModel ?? '')) {
+        const model = preferredResult.models[0];
+        await setLocalModel(preferred, model, preferredResult.contextWindows[model]);
+      }
+      return preferredResult;
+    }
+
+    const alternate = preferred === 'ollama' ? 'lmstudio' : 'ollama';
+    const alternateResult = await detectLocalModels(alternate);
+    if (alternateResult.models.length) {
+      const model = alternateResult.models.includes(preferences?.localModel ?? '')
+        ? preferences!.localModel!
+        : alternateResult.models[0];
+      await setLocalModel(alternate, model, alternateResult.contextWindows[model]);
+    }
+    return alternateResult.models.length ? alternateResult : preferredResult;
   }
 
   async function setLocalModel(provider: 'ollama' | 'lmstudio', model: string, catalogContextWindow?: number) {
@@ -4039,6 +4136,20 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
     finally { setSaving(false); }
   }
 
+  async function importSkill() {
+    setSaving(true);
+    setSkillNotice('');
+    try {
+      const imported = await window.hexa.importSkill();
+      if (!imported) return;
+      setSkills((current) => [...current.filter((skill) => skill.path !== imported.path), imported].sort((a, b) => a.name.localeCompare(b.name)));
+      setSkillsTab('active');
+      setSkillNotice(`Imported ${imported.name}.`);
+    } catch (error) {
+      setSkillNotice(error instanceof Error ? error.message : String(error));
+    } finally { setSaving(false); }
+  }
+
   return (
     <div className={`settings-window ${embedded ? 'embedded' : ''} ${settingsSidebarOpen ? '' : 'settings-sidebar-collapsed'}`}>
       <AppTitleBar controls={<div className="titlebar-navigation chrome-no-drag"><button aria-pressed={!settingsSidebarOpen} onClick={() => setSettingsSidebarOpen((value) => !value)} title="Toggle settings sidebar"><PanelLeftClose size={15} /></button><button disabled={settingsHistoryIndex <= 0} onClick={() => navigateSettings(-1)} title="Previous settings page"><ArrowLeft size={15} /></button><button disabled={settingsHistoryIndex >= settingsHistory.length - 1} onClick={() => navigateSettings(1)} title="Next settings page"><ArrowRight size={15} /></button></div>} />
@@ -4099,7 +4210,7 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
                   <div className="local-model-controls">
                     <select className="settings-select" value={preferences.localModelProvider} onChange={(event) => void setLocalProvider(event.target.value as 'ollama' | 'lmstudio')}><option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option></select>
                     <select className="settings-select" value={preferences.localModel ?? ''} disabled={!localModels.length} onChange={(event) => void setLocalModel(preferences.localModelProvider, event.target.value)}><option value="">{localModels.length ? 'Choose model' : 'No models detected'}</option>{localModels.map((model) => <option key={model} value={model}>{model}</option>)}</select>
-                    <button className="settings-action" onClick={() => void detectLocalModels()}><RefreshCw size={14} /> Detect</button>
+                    <button className="settings-action" onClick={() => void autoDetectLocalModels()}><RefreshCw size={14} /> Detect</button>
                   </div>
                 </SettingRow>}
               </>}
@@ -4150,7 +4261,7 @@ function SettingsApp({ embedded = false, onClose }: { embedded?: boolean; onClos
           )}
           {active === 'skills' && (
             <SettingsSection title="Skills" subtitle="Create and manage the real SKILL.md instructions discovered by Hexa Engine.">
-              <div className="skills-tabs"><button className={skillsTab === 'active' ? 'selected' : ''} onClick={() => setSkillsTab('active')}>Active skills</button><button className={skillsTab === 'create' ? 'selected' : ''} onClick={beginSkill}>Create & edit</button></div>
+              <div className="skills-tabs"><button className={skillsTab === 'active' ? 'selected' : ''} onClick={() => setSkillsTab('active')}>Active skills</button><button className={skillsTab === 'create' ? 'selected' : ''} onClick={beginSkill}>Create & edit</button><button disabled={saving} onClick={() => void importSkill()}><Upload size={14} /> Import skill</button></div>
               {skillsTab === 'active' && <div className="skill-browser">{skills.map((skill) => <button key={skill.path} onClick={() => editSkill(skill)}><span className="skill-mark"><FileText size={17} /></span><span><b>{skill.name}</b><small>{skill.description || 'No description provided'}</small><em>{skill.source} · {skill.path}</em></span><PencilLine size={15} /></button>)}{!skills.length && <div className="skill-empty"><Sparkles size={24} /><b>No discoverable skills</b><span>Create one to add reusable guidance for Hexa Engine.</span><button className="settings-action primary" onClick={beginSkill}>Create skill</button></div>}</div>}
               {skillsTab === 'create' && <div className="skill-studio"><aside><div className="skill-studio-mark"><Sparkles size={20} /></div><h2>{selectedSkill ? `Editing ${selectedSkill.name}` : 'New Hexa skill'}</h2><p>Use concise frontmatter for discovery and keep the instructions focused on decisions Hexa Engine would not know by itself.</p><label>Skill name<input value={skillName} onChange={(event) => setSkillName(event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-'))} placeholder="my-skill" /></label><div className="skill-anatomy"><b>Skill anatomy</b><span><Check size={13} /> name and description</span><span><Check size={13} /> focused Markdown guidance</span><span><Check size={13} /> optional scripts and references</span></div></aside><main><header><span>{selectedSkill?.path || '~/.hexashell/skills/[name]/SKILL.md'}</span><button className="settings-action primary" disabled={saving} onClick={() => void saveSkill()}>{saving ? 'Saving…' : 'Save skill'}</button></header><textarea spellCheck={false} value={skillContent} onChange={(event) => setSkillContent(event.target.value)} />{skillNotice && <div className="skill-notice">{skillNotice}</div>}</main></div>}
             </SettingsSection>

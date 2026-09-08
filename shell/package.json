@@ -97,6 +97,7 @@
       "buildResources": "assets",
       "output": "release"
     },
+    "afterPack": "scripts/install-clean-ffmpeg.mjs",
     "win": {
       "target": [
         "nsis"
