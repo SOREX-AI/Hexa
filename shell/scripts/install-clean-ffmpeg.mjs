@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, readdir, rm, stat, writeFile, copyFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -37,6 +37,16 @@ function normalizeArch(arch) {
   if (typeof arch === 'number' && archNames[arch]) return archNames[arch];
   if (typeof arch === 'string' && archNames.includes(arch)) return arch;
   throw new Error(`Unsupported Electron packaging architecture: ${String(arch)}`);
+}
+
+function packagedResourcesDir(appOutDir, platform, packagedLibrary) {
+  if (platform !== 'darwin') return path.join(appOutDir, 'resources');
+  const contentsMarker = `${path.sep}Contents${path.sep}`;
+  const contentsIndex = packagedLibrary.indexOf(contentsMarker);
+  if (contentsIndex < 0) {
+    throw new Error(`Packaged macOS FFmpeg is not inside an application bundle: ${packagedLibrary}`);
+  }
+  return path.join(packagedLibrary.slice(0, contentsIndex), 'Contents', 'Resources');
 }
 
 export async function installCleanFfmpeg({ appOutDir, platform, arch }) {
@@ -90,7 +100,9 @@ export async function installCleanFfmpeg({ appOutDir, platform, arch }) {
       bytes: destinationInfo.size,
       sha256: destinationHash,
     };
-    await writeFile(path.join(appOutDir, 'resources', 'HEXA_CLEAN_FFMPEG.json'), `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
+    const resourcesDir = packagedResourcesDir(appOutDir, platform, destinations[0]);
+    await mkdir(resourcesDir, { recursive: true });
+    await writeFile(path.join(resourcesDir, 'HEXA_CLEAN_FFMPEG.json'), `${JSON.stringify(receipt, null, 2)}\n`, 'utf8');
     console.log(`✓ Replaced ${libraryName} with Electron ${electronVersion}'s checksum-verified clean FFmpeg (${platform}-${normalizedArch})`);
   } finally {
     await rm(temporaryDir, { recursive: true, force: true });
